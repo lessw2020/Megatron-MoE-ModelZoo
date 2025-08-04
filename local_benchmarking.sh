@@ -1,18 +1,19 @@
 #!/bin/bash
 set -euxo pipefail
 
-
+export MODEL=DeepSeek-V2-Lite
+export DATASET=slimpajama_15k
 
 # Path to Megatron-MoE-Scripts
 export WORKSPACE=$(dirname "$(readlink -f "$0")")
 
 # Benchmarking configurations (must be set)
-export MODEL=${MODEL:-"your_own_model"}
+#export MODEL=${MODEL:-"your_own_model"}
 #export CLUSTER=${CLUSTER:-"your_own_cluster"}
 export CLUSTER="todoMast"
 #export MCORE_RELEASE_VERSION=${MCORE_RELEASE_VERSION:-"your_own_megatron_version"} # Version and release info
 export MCORE_RELEASE_VERSION="0.14"
-export MEGATRON_PATH="~/Megatron-LM"
+export MEGATRON_PATH="/home/less/Megatron-LM"
 #export MEGATRON_PATH=${MEGATRON_PATH:-"your_own_megatron_path"} # Path to Megatron-LM
 #export CONTAINER_IMAGE=${CONTAINER_IMAGE:-"your_own_container_image"} # Path to .sqsh or docker image url
 #export WANDB_API_KEY=${WANDB_API_KEY:-"your_own_wandb_api_key"} # Wandb API key
@@ -26,10 +27,11 @@ source "${WORKSPACE}/runtime_configs/benchmarking/runtime.conf"
 # we manually set the cluster configs of relevance
 export RUN_NAME=${RUN_NAME:-"DeepSeek v2 Lite"}
 # Set DATA_PATH based on MODEL
-export DATA_PATH=${DATA_PATH:-${DATA_PATHS["${DATASET}:${MODEL}"]}}
+# export DATA_PATH=${DATA_PATH:-${DATA_PATHS["${DATASET}:${MODEL}"]}}
+export DATA_PATH=${DATA_PATH:-"~/datasets/slimpajama_15k"}
 
-# Set TOKENIZER_MODEL based on MODEL
-export TOKENIZER_MODEL=$(get_path_based_on_model "TOKENIZER_MODELS" "${MODEL}")
+# Set TOKENIZER_MODEL based on MODEL (using direct assignment for now)
+export TOKENIZER_MODEL="deepseek-ai/DeepSeek-V2"
 
 
 
@@ -47,10 +49,9 @@ else
 fi
 
 # Extract training parameters to export
-TRAINING_PARAMS_FROM_CONFIG=$(yq '... comments="" | .MODEL_ARGS | to_entries | .[] |
+TRAINING_PARAMS_FROM_CONFIG=$(yq '.MODEL_ARGS | to_entries | .[] |
     select(.value != "false") |
-    with(select(.value == "true"); .value = "") |
-    [.key + " " + .value] | join("")' ${TRAINING_PARAMS_PATH} | tr '\n' ' ')
+    (select(.value == "true") | .key) // (.key + " " + (.value | tostring))' ${TRAINING_PARAMS_PATH} | sed 's/^"//;s/"$//' | tr '\n' ' ')
 TRAINING_PARAMS="${TRAINING_PARAMS} ${TRAINING_PARAMS_FROM_CONFIG}"
 
 # Append any command line arguments to TRAINING_PARAMS
@@ -59,13 +60,20 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Extract environment variables to export
-ENV_VARS=$(yq '... comments="" | .ENV_VARS | to_entries | .[] | [.key + "=" + .value] | join(" ")' ${TRAINING_PARAMS_PATH})
-while IFS='=' read -r KEY VALUE; do
-    if [[ -n ${KEY} ]]; then
-        export "${KEY}"="${VALUE}"
-        echo "${KEY}=${VALUE}"
+ENV_VARS=$(yq '.ENV_VARS | to_entries | .[] | .key + "=" + (.value | tostring)' ${TRAINING_PARAMS_PATH})
+while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+        # Remove quotes from the line
+        line=$(echo "$line" | sed 's/^"//;s/"$//')
+        # Split on the first = sign
+        KEY="${line%%=*}"
+        VALUE="${line#*=}"
+        if [[ -n "$KEY" ]]; then
+            export "${KEY}"="${VALUE}"
+            echo "${KEY}=${VALUE}"
+        fi
     fi
-done < <(echo "${ENV_VARS}" | tr ' ' '\n')
+done <<< "$ENV_VARS"
 
 # Virtual pipeline parallelism arguments
 if [[ ${VPP} -gt 1 ]]; then
@@ -133,6 +141,9 @@ else
     PROFILE_CMD=""
 fi
 
+# Set default output path if not set
+export OUTPUT_PATH=${OUTPUT_PATH:-"${WORKSPACE}/outputs"}
+
 # Export training command
 export TRAINING_CMD="${PROFILE_CMD} python ${TRAINING_SCRIPT_PATH} ${TRAINING_PARAMS}"
 
@@ -158,7 +169,7 @@ echo "Working directory: ${MEGATRON_PATH}"
 cd "${MEGATRON_PATH}"
 
 # Check if we need to use container or run directly
-if [[ "${CONTAINER_IMAGE}" != "your_own_container_image" ]] && [[ -n "${CONTAINER_IMAGE}" ]]; then
+if [[ "${CONTAINER_IMAGE:-your_own_container_image}" != "your_own_container_image" ]] && [[ -n "${CONTAINER_IMAGE:-}" ]]; then
     # Container-based execution
     echo "Running with container: ${CONTAINER_IMAGE}"
 
@@ -207,7 +218,7 @@ if [[ "${CONTAINER_IMAGE}" != "your_own_container_image" ]] && [[ -n "${CONTAINE
 else
     # Direct execution without container
     echo "Running directly on host system"
-    bash -c "${TRAINING_CMD}" 2>&1 | tee "${LOG_FILE}"
+    eval "${TRAINING_CMD}" 2>&1 | tee "${LOG_FILE}"
 fi
 
 echo "Benchmarking completed. Log saved to: ${LOG_FILE}"
