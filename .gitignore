@@ -14,3 +14,4 @@ nemo-scripts/nemo_experiments/*
 *.tmp
 *.logs
 *.log
+*.npy
