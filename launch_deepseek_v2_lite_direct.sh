@@ -7,7 +7,7 @@ set -euxo pipefail
 
 # Basic configuration
 export MODEL="DeepSeek-V2-Lite"
-export DATASET="slimpajama_15k"
+export DATASET="wikitext_full" # wikipedia_20k" # slimpajama_15k"
 export WORKSPACE=$(dirname "$(readlink -f "$0")")
 export CLUSTER="todoMast"
 export MCORE_RELEASE_VERSION="0.14"
@@ -48,7 +48,7 @@ export PR="bf16"
 
 # Paths
 export RUN_NAME="DeepSeek v2 Lite"
-export DATA_PATH="${DATA_PATH:-/home/less/datasets/slimpajama_15k/slimpajama_text_document}"
+export DATA_PATH="${DATA_PATH:-/home/less/datasets/wikitext_full/wikitext_text_document}" #/home/less/datasets/wikipedia_20k/wikipedia_en_text_document}" # slimpajama_15k/slimpajama_text_document}"
 export TOKENIZER_MODEL="deepseek-ai/DeepSeek-V2"
 export OUTPUT_PATH="${OUTPUT_PATH:-${WORKSPACE}/outputs}"
 export LOAD_PATH="${LOAD_PATH:-}"

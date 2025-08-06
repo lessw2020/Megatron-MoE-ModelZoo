@@ -36,7 +36,7 @@ def get_args():
         "--dataset",
         type=str,
         required=True,
-        choices=["slimpajama", "wikipedia", "custom"],
+        choices=["slimpajama", "wikipedia", "custom", "wikitext"],
         help="Dataset to download and preprocess",
     )
     parser.add_argument(
@@ -268,6 +268,62 @@ def download_and_convert_dataset(args):
             raw_data_dir, f"wikipedia_{args.language}_{args.date}.jsonl"
         )
 
+    elif args.dataset == "wikitext":
+        # Handle local wikitext dataset
+        wikitext_path = "/home/less/datasets/wikitext/wikitext_train.jsonl"
+        if not os.path.exists(wikitext_path):
+            raise FileNotFoundError(
+                f"Wikitext dataset not found at {wikitext_path}. Please run download_wikitext.py first."
+            )
+
+        # For wikitext, we'll copy/process the existing JSONL file
+        jsonl_file = os.path.join(raw_data_dir, "wikitext_train.jsonl")
+        print(f"Processing local wikitext dataset from: {wikitext_path}")
+
+        # Process the existing JSONL file and apply filtering
+        processed_count = 0
+        filtered_count = 0
+
+        with open(wikitext_path, "r", encoding="utf-8") as input_f, open(
+            jsonl_file, "w", encoding="utf-8"
+        ) as output_f:
+
+            for line in input_f:
+                try:
+                    sample = json.loads(line.strip())
+                    text = sample.get("text", "")
+
+                    # Filter by length
+                    if len(text) < args.min_length:
+                        filtered_count += 1
+                        continue
+
+                    if args.max_length and len(text) > args.max_length:
+                        text = text[: args.max_length]
+
+                    # Create JSON object
+                    json_obj = {"text": text}
+                    output_f.write(json.dumps(json_obj) + "\n")
+                    processed_count += 1
+
+                    # Check if we've reached max_samples
+                    if args.max_samples and processed_count >= args.max_samples:
+                        print(f"Reached max_samples limit: {args.max_samples}")
+                        break
+
+                    if processed_count % 10000 == 0:
+                        print(
+                            f"Processed {processed_count} samples, filtered {filtered_count}..."
+                        )
+
+                except json.JSONDecodeError:
+                    continue
+
+        print(f"Wikitext processing complete: {jsonl_file}")
+        print(f"Total samples processed: {processed_count}")
+        print(f"Samples filtered (too short): {filtered_count}")
+        return jsonl_file
+
     elif args.dataset == "custom":
         if not args.custom_dataset_name:
             raise ValueError("--custom-dataset-name is required for custom datasets")
@@ -277,81 +333,84 @@ def download_and_convert_dataset(args):
         safe_name = args.custom_dataset_name.replace("/", "_")
         jsonl_file = os.path.join(raw_data_dir, f"{safe_name}_{args.split}.jsonl")
 
-    print(f"Downloading {dataset_name}")
-    if dataset_config:
-        print(f"Configuration: {dataset_config}")
-
-    try:
-        # Load dataset - always use streaming for large datasets like SlimPajama
-        # and handle max_samples in the processing loop
+    # Only process HuggingFace datasets for non-wikitext datasets
+    if args.dataset != "wikitext":
+        print(f"Downloading {dataset_name}")
         if dataset_config:
-            dataset = load_dataset(
-                dataset_name, dataset_config, split=args.split, streaming=True
-            )
-        else:
-            dataset = load_dataset(dataset_name, split=args.split, streaming=True)
-    except Exception as e:
-        print(f"Error loading dataset: {e}")
-        if args.dataset == "wikipedia":
-            print(f"Try checking available configurations for Wikipedia")
-        sys.exit(1)
+            print(f"Configuration: {dataset_config}")
 
-    print(f"Converting to JSONL format: {jsonl_file}")
-    print(f"Text field: {text_field}")
-    if args.min_length:
-        print(f"Minimum length: {args.min_length} characters")
-    if args.max_length:
-        print(f"Maximum length: {args.max_length} characters")
-
-    processed_count = 0
-    filtered_count = 0
-
-    with open(jsonl_file, "w", encoding="utf-8") as f:
-        # Use streaming dataset and handle max_samples in the loop
-        for sample in dataset:
-            text = sample.get(text_field, "")
-
-            # Clean text if requested (mainly for Wikipedia)
-            if args.clean_text and args.dataset == "wikipedia":
-                text = clean_wikipedia_text(text)
-
-            # Filter by length
-            if len(text) < args.min_length:
-                filtered_count += 1
-                continue
-
-            if args.max_length and len(text) > args.max_length:
-                text = text[: args.max_length]
-
-            # Create JSON object
-            json_obj = {"text": text}
-
-            # Add additional fields for some datasets
+        try:
+            # Load dataset - always use streaming for large datasets like SlimPajama
+            # and handle max_samples in the processing loop
+            if dataset_config:
+                dataset = load_dataset(
+                    dataset_name, dataset_config, split=args.split, streaming=True
+                )
+            else:
+                dataset = load_dataset(dataset_name, split=args.split, streaming=True)
+        except Exception as e:
+            print(f"Error loading dataset: {e}")
             if args.dataset == "wikipedia":
-                json_obj.update(
-                    {
-                        "title": sample.get("title", ""),
-                        "url": sample.get("url", ""),
-                        "id": sample.get("id", ""),
-                    }
-                )
+                print(f"Try checking available configurations for Wikipedia")
+            sys.exit(1)
 
-            f.write(json.dumps(json_obj) + "\n")
-            processed_count += 1
+        print(f"Converting to JSONL format: {jsonl_file}")
+        print(f"Text field: {text_field}")
+        if args.min_length:
+            print(f"Minimum length: {args.min_length} characters")
+        if args.max_length:
+            print(f"Maximum length: {args.max_length} characters")
 
-            # Check if we've reached max_samples
-            if args.max_samples and processed_count >= args.max_samples:
-                print(f"Reached max_samples limit: {args.max_samples}")
-                break
+        processed_count = 0
+        filtered_count = 0
 
-            if processed_count % 10000 == 0:
-                print(
-                    f"Processed {processed_count} samples, filtered {filtered_count}..."
-                )
+        with open(jsonl_file, "w", encoding="utf-8") as f:
+            # Use streaming dataset and handle max_samples in the loop
+            for sample in dataset:
+                text = sample.get(text_field, "")
 
-    print(f"JSONL conversion complete: {jsonl_file}")
-    print(f"Total samples processed: {processed_count}")
-    print(f"Samples filtered (too short): {filtered_count}")
+                # Clean text if requested (mainly for Wikipedia)
+                if args.clean_text and args.dataset == "wikipedia":
+                    text = clean_wikipedia_text(text)
+
+                # Filter by length
+                if len(text) < args.min_length:
+                    filtered_count += 1
+                    continue
+
+                if args.max_length and len(text) > args.max_length:
+                    text = text[: args.max_length]
+
+                # Create JSON object
+                json_obj = {"text": text}
+
+                # Add additional fields for some datasets
+                if args.dataset == "wikipedia":
+                    json_obj.update(
+                        {
+                            "title": sample.get("title", ""),
+                            "url": sample.get("url", ""),
+                            "id": sample.get("id", ""),
+                        }
+                    )
+
+                f.write(json.dumps(json_obj) + "\n")
+                processed_count += 1
+
+                # Check if we've reached max_samples
+                if args.max_samples and processed_count >= args.max_samples:
+                    print(f"Reached max_samples limit: {args.max_samples}")
+                    break
+
+                if processed_count % 10000 == 0:
+                    print(
+                        f"Processed {processed_count} samples, filtered {filtered_count}..."
+                    )
+
+        print(f"JSONL conversion complete: {jsonl_file}")
+        print(f"Total samples processed: {processed_count}")
+        print(f"Samples filtered (too short): {filtered_count}")
+
     return jsonl_file
 
 
@@ -370,6 +429,8 @@ def preprocess_with_megatron(args, jsonl_file, tokenizer_info):
         output_prefix = os.path.join(args.output_dir, f"wikipedia_{args.language}")
     elif args.dataset == "slimpajama":
         output_prefix = os.path.join(args.output_dir, "slimpajama")
+    elif args.dataset == "wikitext":
+        output_prefix = os.path.join(args.output_dir, "wikitext")
     else:
         safe_name = (
             args.custom_dataset_name.replace("/", "_")
