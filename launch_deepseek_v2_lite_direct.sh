@@ -34,7 +34,7 @@ export MOE_GROUPED_GEMM="true"
 # Training configurations
 export NNODES=1
 export RUN_TIME="00:20:00"
-export PRETRAIN=0
+export PRETRAIN=1
 
 # Data configurations
 export SEQ_LEN=4096
@@ -67,7 +67,7 @@ export NVTE_FWD_LAYERNORM_SM_MARGIN=0
 export NVTE_BWD_LAYERNORM_SM_MARGIN=0
 
 # Build training parameters (from DeepSeek-V2-Lite.yaml MODEL_ARGS)
-TRAINING_PARAMS="--distributed-timeout-minutes 60"
+TRAINING_PARAMS="--distributed-timeout-minutes 3"
 TRAINING_PARAMS+=" --tensor-model-parallel-size ${TP}"
 TRAINING_PARAMS+=" --pipeline-model-parallel-size ${PP}"
 TRAINING_PARAMS+=" --expert-model-parallel-size ${EP}"
@@ -148,10 +148,9 @@ TRAINING_PARAMS+=" --mscale 0.707"
 TRAINING_PARAMS+=" --mscale-all-dim 0.707"
 TRAINING_PARAMS+=" --eval-iters 32"
 TRAINING_PARAMS+=" --eval-interval 200"
-TRAINING_PARAMS+=" --finetune"
 TRAINING_PARAMS+=" --auto-detect-ckpt-format"
 
-# Add load path if specified
+# Add load path if specified (typically not used for pretraining from scratch)
 if [[ -n "${LOAD_PATH}" ]]; then
     TRAINING_PARAMS+=" --load ${LOAD_PATH}"
 fi
