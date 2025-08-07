@@ -5,6 +5,9 @@ set -euxo pipefail
 # This script contains hardcoded values from model_configs/benchmarking/DeepSeek-V2-Lite.yaml
 # and runtime_configs/benchmarking/runtime.conf and common.conf
 
+# deep EP requires this:
+export PYTHONPATH=/data/users/less/DeepEP/build/lib.linux-x86_64-cpython-312:$PYTHONPATH
+
 # Basic configuration
 export MODEL="DeepSeek-V2-Lite"
 export DATASET="wikitext_full" # wikipedia_20k" # slimpajama_15k"
@@ -28,8 +31,9 @@ export GBS=512
 export NUM_LAYERS=27
 
 # MoE configurations
-export MOE_TOKEN_DISPATCHER="alltoall"
+export MOE_TOKEN_DISPATCHER="flex"  # [flex, alltoall, allgather]
 export MOE_GROUPED_GEMM="true"
+export MOE_ENABLE_DEEPEP="true"  # requires flex dispatcher
 
 # Training configurations
 export NNODES=1
@@ -134,6 +138,10 @@ TRAINING_PARAMS+=" --moe-router-pre-softmax"
 # Add moe-grouped-gemm flag if enabled
 if [[ "${MOE_GROUPED_GEMM}" == "true" ]]; then
     TRAINING_PARAMS+=" --moe-grouped-gemm"
+fi
+# Add moe-enable-deepep flag if enabled
+if [[ "${MOE_ENABLE_DEEPEP}" == "true" ]]; then
+    TRAINING_PARAMS+=" --moe-enable-deepep"
 fi
 TRAINING_PARAMS+=" --moe-aux-loss-coeff 1e-3"
 TRAINING_PARAMS+=" --moe-router-topk-scaling-factor 1.0"
